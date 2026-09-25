@@ -8,9 +8,9 @@ import * as THREE from 'three';
 import { latticeTextures, patchInstancedRepeat, latticeDepthMaterial } from './lattice.js';
 
 const PAINT = {
-  base: new THREE.Color('#634a37'),
-  mid: new THREE.Color('#775a40'),
-  top: new THREE.Color('#8e7053'),
+  base: new THREE.Color('#6a5343'),
+  mid: new THREE.Color('#7d6450'),
+  top: new THREE.Color('#937a62'),
 };
 
 const smooth = (a, b, x) => {

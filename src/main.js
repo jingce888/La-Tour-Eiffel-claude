@@ -15,6 +15,7 @@ import { buildFloors } from './tower/floors.js';
 import { buildSummit } from './tower/summit.js';
 import { buildBase } from './tower/base.js';
 import { InclineRail } from './tower/rails.js';
+import { TOWER_NIGHT, addTowerGlow, buildSparkles, buildBeacon } from './tower/night.js';
 import { L1, L2, L3, L3_UP } from './tower/profile.js';
 import { CollisionWorld } from './game/collision.js';
 import { InclineLift, DuoLift } from './game/elevators.js';
@@ -66,6 +67,18 @@ async function boot() {
   buildSummit({ group: tower, collision, towerBearingZ: TOWER_BEARING_Z });
   const base = buildBase({ group: tower, collision, rails });
   const merged = mergeStatic(tower);
+  // night illumination: every painted tower surface glows gold from within
+  const glowDone = new Set();
+  tower.traverse((o) => {
+    if (!o.isMesh) return;
+    for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
+      if (glowDone.has(m) || m.transparent || !/^(tower-|arch-|frieze)/.test(m.name || '')) continue;
+      glowDone.add(m);
+      addTowerGlow(m);
+    }
+  });
+  const sparkles = buildSparkles(scene, [...sets.chords.rec, ...sets.braces.rec]);
+  const beacon = buildBeacon(scene);
   progress(0.34, `塔顶与天线 · 合并为 ${merged} 个批次`);
   await nextFrame();
 
@@ -129,6 +142,10 @@ async function boot() {
   function setTime(name) {
     atmo.setTime(name);
     world.setTime && world.setTime(name);
+    const night = name === 'night';
+    TOWER_NIGHT.glow.value = night ? 1 : 0;
+    beacon.visible = night;
+    sparkles.visible = night;
     document.querySelectorAll('#chips-time .chip').forEach((c) => c.classList.toggle('on', c.dataset.v === name));
   }
   game.onCycleTime = () => {
@@ -136,7 +153,14 @@ async function boot() {
     setTime(times[i]);
     hud.toast(`时间：${TIMES[times[i]].label}`);
   };
-  world.setTime && world.setTime(atmo.preset);
+  setTime(atmo.preset);
+  // night show: the tower sparkles for 20 s at the start of every minute
+  game.onFrame = (dt, t) => {
+    TOWER_NIGHT.time.value = t;
+    beacon.rotation.y += dt * 0.42;
+    const cyc = t % 60;
+    TOWER_NIGHT.sparkle.value = cyc < 20 ? Math.min(1, cyc / 1.5, (20 - cyc) / 1.5) : 0;
+  };
 
   // ---------------------------------------------------------------- menu
   const chips = (id, items, current, onPick) => {

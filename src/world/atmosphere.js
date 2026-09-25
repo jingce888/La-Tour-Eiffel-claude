@@ -199,8 +199,8 @@ void main() {
     nsky += vec3(0.9, 0.93, 1.0) * star * 0.05;
     float md = max(dot(direction, moonDir), 0.0);
     nsky += vec3(0.55, 0.6, 0.72) * (pow(md, 900.0) * 1.2 + pow(md, 12.0) * 0.004);
-    // city light dome near the horizon
-    nsky += vec3(0.05, 0.028, 0.012) * exp(-max(direction.y, 0.0) * 9.0) * 0.12;
+    // the city's light dome: Paris skies are never black
+    nsky += vec3(0.06, 0.036, 0.018) * exp(-max(direction.y, 0.0) * 7.0) * 0.55;
     col = mix(col, nsky, night);
   }
 

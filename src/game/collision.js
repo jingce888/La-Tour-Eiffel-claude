@@ -48,7 +48,8 @@ export class CollisionWorld {
         const t2 = f.axis === 'x' ? (x - f.x0) / (f.x1 - f.x0) : (z - f.z0) / (f.z1 - f.z0);
         y = f.y0 + (f.y1 - f.y0) * (f.rev ? 1 - t2 : t2);
       }
-      if (y <= maxY && y > best && !this.inHole(x, z, y)) { best = y; tag = f.tag; }
+      // slab holes cut flat floors only; stairs/ramps are explicit walkways
+      if (y <= maxY && y > best && (f.k === 1 || !this.inHole(x, z, y))) { best = y; tag = f.tag; }
     }
     for (const d of this.dynamic) {
       if (!d.floorAt) continue;

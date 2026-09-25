@@ -377,8 +377,11 @@ export function archBandGeometries() {
       prevMid = m;
       pos.push(...o, ...inn);
       uv.push(0, v, 1, v);
+      // the lambrequin hangs from the crown of the arch only: towards the feet,
+      // where the intrados turns vertical, its pendants would stick out sideways
+      const s = Math.min(1, Math.max(0, (Math.sin(th) - 0.3) / 0.4)), k = s * s * (3 - 2 * s);
       const fi0 = archPoint(f, th, d - 0.2, ARCH.off - 0.2);
-      const fi1 = archPoint(f, th, d + 1.25, ARCH.off - 0.2);
+      const fi1 = archPoint(f, th, d - 0.2 + 1.45 * k, ARCH.off - 0.2);
       fpos.push(...fi0, ...fi1);
       fuv.push(vf, 1, vf, 0);
       if (i > 0) {

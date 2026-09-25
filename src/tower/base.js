@@ -82,8 +82,8 @@ export function buildBase({ group, collision, rails }) {
     const pit = new THREE.Mesh(pitGeo, dark);
     pit.position.y = STATION_Y + 0.012;
     group.add(pit);
-    // fences around the pit (the door side is gated by the lift)
-    for (let i = 1; i < 4; i++) {
+    // fences around the pit on three sides; the door side (pc[3]→pc[0]) is gated by the lift
+    for (let i = 0; i < 3; i++) {
       const a = pc[i], b = pc[(i + 1) % 4];
       collision.addSeg(a[0], a[1], b[0], b[1], 0.08, STATION_Y, STATION_Y + 1.2);
       const len = Math.hypot(b[0] - a[0], b[1] - a[1]);

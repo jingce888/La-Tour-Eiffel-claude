@@ -146,7 +146,23 @@ export class Hud {
       el.style.left = `${(0.5 + d / span) * w}px`;
     };
     for (const t of this.ticks) place(t.el, t.deg);
-    for (const l of this.landmarks) place(l.el, bearingTo(l.lm));
+    // landmark labels: most important first, dropping to a second row (or
+    // hiding) when they would overlap a label already placed
+    const rows = [[], []];
+    for (const l of this.landmarks) {
+      const d = ((bearingTo(l.lm) - heading + 540) % 360) - 180;
+      let row = -1;
+      if (Math.abs(d) <= span / 2 + 5) {
+        const x = (0.5 + d / span) * w, half = l.lm.short.length * 5.2 + 4;
+        row = rows.findIndex((r) => r.every(([x0, h0]) => Math.abs(x - x0) > half + h0));
+        if (row >= 0) {
+          rows[row].push([x, half]);
+          l.el.style.left = `${x}px`;
+        }
+      }
+      l.el.style.display = row < 0 ? 'none' : '';
+      l.el.classList.toggle('r2', row === 1);
+    }
     this.set('deg', this.el.deg, `${Math.round((heading + 360) % 360)}°`);
   }
 }

@@ -101,6 +101,19 @@ function paint(data, cx, cz, half, size, level) {
     for (let i = 1; i < n; i++) g.lineTo(...tx(l.pts[i * 2], l.pts[i * 2 + 1]));
     g.stroke();
   }
+  // the paved parvis under and around the tower (stabilised sand & stone)
+  if (level !== 'far') {
+    g.fillStyle = '#b3a791';
+    const [ax, az] = tx(-70, -70), [bx, bz] = tx(70, 70);
+    g.fillRect(ax, az, bx - ax, bz - az);
+    if (level === 'local') {
+      g.strokeStyle = 'rgba(90,80,66,0.18)'; g.lineWidth = Math.max(1, 0.25 * s);
+      for (let v = -70; v <= 70; v += 3.5) {
+        g.beginPath(); g.moveTo(...tx(v, -70)); g.lineTo(...tx(v, 70)); g.stroke();
+        g.beginPath(); g.moveTo(...tx(-70, v)); g.lineTo(...tx(70, v)); g.stroke();
+      }
+    }
+  }
   // water
   g.fillStyle = COL.water;
   for (const a of data.water) {
@@ -121,9 +134,35 @@ function mulberry(a) {
   };
 }
 
+function paintNight(data, half, size) {
+  const cv = canvas(size, size), g = cv.getContext('2d');
+  const s = size / (2 * half);
+  const tx = (x, z) => [(x + half) * s, (z + half) * s];
+  g.fillStyle = '#000'; g.fillRect(0, 0, size, size);
+  g.lineCap = 'round';
+  g.shadowColor = '#ff9a3c'; g.shadowBlur = 3;
+  for (const l of [...data.roads, ...data.roadsFar]) {
+    if (l.cls > 6 || (l.flags & 2)) continue;
+    g.strokeStyle = l.cls <= 2 ? '#ffd08a' : '#b97a3c';
+    g.lineWidth = Math.max(0.8, (l.cls <= 3 ? 2.2 : 1.2));
+    g.beginPath();
+    g.moveTo(...tx(l.pts[0], l.pts[1]));
+    for (let i = 2; i < l.pts.length; i += 2) g.lineTo(...tx(l.pts[i], l.pts[i + 1]));
+    g.stroke();
+  }
+  g.shadowBlur = 0;
+  // warm pool of light around the illuminated tower
+  const [cx, cz] = tx(0, 0);
+  const grd = g.createRadialGradient(cx, cz, 0, cx, cz, 190 * s);
+  grd.addColorStop(0, 'rgba(255,190,110,0.9)'); grd.addColorStop(0.45, 'rgba(255,160,80,0.35)'); grd.addColorStop(1, 'rgba(255,140,60,0)');
+  g.fillStyle = grd; g.fillRect(cx - 200 * s, cz - 200 * s, 400 * s, 400 * s);
+  return toTexture(cv, { repeat: false });
+}
+
 export function groundMaterial(tex) {
   const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.93, metalness: 0 });
   const U = {
+    tNight: { value: tex.night }, uNight: { value: 0 }, bNight: { value: new THREE.Vector3(0, 0, 9000) },
     tLocal: { value: tex.local }, tMid: { value: tex.mid }, tFar: { value: tex.far }, tNoise: { value: noiseTexture() },
     bLocal: { value: new THREE.Vector3(0, 0, 450) }, bMid: { value: new THREE.Vector3(0, 0, 2800) }, bFar: { value: new THREE.Vector3(0, 0, 25000) },
   };
@@ -135,8 +174,9 @@ export function groundMaterial(tex) {
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
         varying vec3 vGW;
-        uniform sampler2D tLocal, tMid, tFar, tNoise;
-        uniform vec3 bLocal, bMid, bFar;
+        uniform sampler2D tLocal, tMid, tFar, tNoise, tNight;
+        uniform vec3 bLocal, bMid, bFar, bNight;
+        uniform float uNight;
         vec2 guv(vec2 xz, vec3 b) { vec2 u = (xz - b.xy) / (2.0 * b.z) + 0.5; return vec2(u.x, 1.0 - u.y); }
         float edgeW(vec2 xz, vec3 b, float band) { vec2 d = abs(xz - b.xy); return clamp((b.z - max(d.x, d.y)) / band, 0.0, 1.0); }`)
       .replace('#include <map_fragment>', `
@@ -156,9 +196,16 @@ export function groundMaterial(tex) {
         diffuseColor.rgb *= gc * detail;
       `)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
-        roughnessFactor = mix(roughnessFactor, 0.99, grass);`);
+        roughnessFactor = mix(roughnessFactor, 0.99, grass);`)
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+        if (uNight > 0.0) {
+          vec3 nl = texture2D(tNight, guv(xz, bNight)).rgb;
+          float nd = smoothstep(60.0, 420.0, length(vGW - cameraPosition));
+          totalEmissiveRadiance += nl * vec3(0.9, 0.62, 0.32) * uNight * 0.3 * nd;
+        }`);
   };
-  mat.customProgramCacheKey = () => 'ground-v1';
+  mat.userData.uniforms = U;
+  mat.customProgramCacheKey = () => 'ground-v2';
   return mat;
 }
 
@@ -205,6 +252,7 @@ export function buildGround({ scene, data }) {
     local: toTexture(paint(data, 0, 0, 450, 2048, 'local'), { repeat: false }),
     mid: toTexture(paint(data, 0, 0, 2800, midSize, 'mid'), { repeat: false }),
     far: toTexture(paint(data, 0, 0, 25000, 2048, 'far'), { repeat: false }),
+    night: paintNight(data, 9000, 2048),
   };
   const mat = groundMaterial(tex);
 

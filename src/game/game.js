@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { L1, L2, L3, L3_UP } from '../tower/profile.js';
 import { Player } from './player.js';
+import { FENCES } from '../world/textures.js';
 
 const yawToward = (fx, fz, tx, tz) => Math.atan2(-(tx - fx), -(tz - fz));
 
@@ -235,11 +236,15 @@ export class Game {
       });
     }
     this.player.applyCamera(this.t, this.running && this.input.zoomHeld);
-    this.hud.scope(this.running && this.input.zoomHeld);
+    const scoping = this.running && this.input.zoomHeld;
+    this.hud.scope(scoping);
+    this.fenceFade = (this.fenceFade ?? 1) + ((scoping ? 0 : 1) - (this.fenceFade ?? 1)) * Math.min(1, dt * 10);
+    for (const m of FENCES) { m.opacity = this.fenceFade; m.visible = this.fenceFade > 0.02; }
     // compass: heading from yaw, north-based
     const heading = this.bearingOfYaw(this.player.yaw);
     this.hud.compass(heading, (lm) => this.bearingTo(lm.pos));
     this.world && this.world.update && this.world.update(dt, this.camera, this);
+    this.onFrame && this.onFrame(dt, this.t);
     this.landmarks && this.landmarks.update(this.camera, this.labelsOn || this.input.zoomHeld, this.player.pos);
     this.atmo.update(dt, this.camera);
     this.governor && this.governor.frame(dtRaw * 1000);

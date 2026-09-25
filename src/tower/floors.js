@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { H, C, L1, L2, L1_HALF, L2_HALF, L1_VOID, L2_CORE } from './profile.js';
 import { FACES, G1, G2, archBandGeometries } from './structure.js';
 import { paintAt } from './materials.js';
-import { canvas, toTexture, deckTexture, fenceMeshTexture } from '../world/textures.js';
+import { canvas, toTexture, deckTexture, fenceMeshTexture, FENCES } from '../world/textures.js';
 import { latticeTextures } from './lattice.js';
 
 // 18 names per façade (engraved in gold letters, 1889 / restored 1986-87)
@@ -200,8 +200,9 @@ export function buildFloors({ group, collision, rails, materials }) {
   const fenceTex = fenceMeshTexture();
   const fenceMat = new THREE.MeshStandardMaterial({
     name: 'fence-mesh', map: fenceTex, color: paintAt(new THREE.Color(), 116, 1.15), roughness: 0.55, metalness: 0.2,
-    alphaTest: 0.5, alphaToCoverage: true, side: THREE.DoubleSide,
+    transparent: true, depthWrite: false, alphaTest: 0.01, side: THREE.DoubleSide,
   });
+  FENCES.add(fenceMat);
   const out = { holes: {}, landings: {} };
 
   // ---------------------------------------------------------------- arch bands & fringes
@@ -288,19 +289,31 @@ export function buildFloors({ group, collision, rails, materials }) {
     for (const g of balGlass) { const m = new THREE.Mesh(g, glassMat); m.renderOrder = 3; group.add(m); }
     group.add(grid.build(steelMat), bal.build(steelMat2));
 
-    // outer promenade: tall glass screens with posts (2.6 m wide promenade)
+    // outer promenade: the perimeter gallery — slender posts carrying a canopy
+    // beam 5.4 m up, glass screens below (the band that gives the 1st floor its
+    // weight when seen from the Champ de Mars)
     const scr = new Batch(), glassStrips = [];
     const R = L1_HALF - 0.25;
+    const GH = 5.4;
     for (const f of FACES) {
       const a = f.ax === 'z' ? [-R, f.s * R] : [f.s * R, -R];
       const b = f.ax === 'z' ? [R, f.s * R] : [f.s * R, R];
-      glassStrips.push(planeStrip([a, b], L1 + 0.1, L1 + 2.6, 1, 1));
+      glassStrips.push(planeStrip([a, b], L1 + 0.1, L1 + 2.7, 1, 1));
       for (let t = -R; t <= R + 0.01; t += 70.69 / 30) {
-        if (f.ax === 'z') scr.box(t, L1 + 1.35, f.s * R, 0.12, 2.7, 0.16);
-        else scr.box(f.s * R, L1 + 1.35, t, 0.16, 2.7, 0.12);
+        if (f.ax === 'z') scr.box(t, L1 + GH / 2, f.s * R, 0.16, GH, 0.2);
+        else scr.box(f.s * R, L1 + GH / 2, t, 0.2, GH, 0.16);
       }
-      if (f.ax === 'z') { scr.box(0, L1 + 2.7, f.s * R, 2 * R, 0.12, 0.3); scr.box(0, L1 + 1.05, f.s * R, 2 * R, 0.06, 0.1); }
-      else { scr.box(f.s * R, L1 + 2.7, 0, 0.3, 0.12, 2 * R); scr.box(f.s * R, L1 + 1.05, 0, 0.1, 0.06, 2 * R); }
+      if (f.ax === 'z') {
+        scr.box(0, L1 + GH, f.s * R, 2 * R + 0.4, 0.55, 0.5);
+        scr.box(0, L1 + GH - 0.6, f.s * (R - 1.1), 2 * R - 1.6, 0.25, 2.2);
+        scr.box(0, L1 + 2.75, f.s * R, 2 * R, 0.14, 0.3);
+        scr.box(0, L1 + 1.05, f.s * R, 2 * R, 0.06, 0.1);
+      } else {
+        scr.box(f.s * R, L1 + GH, 0, 0.5, 0.55, 2 * R + 0.4);
+        scr.box(f.s * (R - 1.1), L1 + GH - 0.6, 0, 2.2, 0.25, 2 * R - 1.6);
+        scr.box(f.s * R, L1 + 2.75, 0, 0.3, 0.14, 2 * R);
+        scr.box(f.s * R, L1 + 1.05, 0, 0.1, 0.06, 2 * R);
+      }
       collision.addSeg(a[0], a[1], b[0], b[1], 0.2, L1, L1 + 3);
     }
     for (const g of glassStrips) { const m = new THREE.Mesh(g, glassMat); m.renderOrder = 3; group.add(m); }
@@ -310,7 +323,7 @@ export function buildFloors({ group, collision, rails, materials }) {
     for (const f of FACES) {
       const key = (f.s > 0 ? '+' : '-') + f.ax;
       const tex = friezeTexture(FACE_NAMES[key], G1.frieze0, G1.frieze1);
-      const mat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.58, metalness: 0.08 });
+      const mat = new THREE.MeshStandardMaterial({ name: 'frieze', map: tex, roughness: 0.58, metalness: 0.08 });
       const w = 2 * L1_HALF + 0.6, hgt = G1.frieze1 - G1.frieze0 - 0.02, d = 0.9;
       const geo = new THREE.BoxGeometry(w, hgt, d);
       const m = new THREE.Mesh(geo, [steelMat, steelMat, steelMat, steelMat, mat, steelMat]);
@@ -375,7 +388,7 @@ export function buildFloors({ group, collision, rails, materials }) {
 
     // flared cornice with consoles, one band per face
     const tex = friezeTexture([], G2.yt, L2, false);
-    const cm = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.6, metalness: 0.08, side: THREE.DoubleSide });
+    const cm = new THREE.MeshStandardMaterial({ name: 'frieze-cornice', map: tex, roughness: 0.6, metalness: 0.08, side: THREE.DoubleSide });
     for (const f of FACES) {
       const y0 = G2.yt, y1 = L2 - 0.05;
       const r0 = H(y0) + 0.8, r1 = L2_HALF + 0.1;
@@ -398,7 +411,7 @@ export function buildFloors({ group, collision, rails, materials }) {
     // hanging lace panel between the legs (fine diamond lattice)
     const lace = latticeTextures.diamond();
     const laceMat = new THREE.MeshStandardMaterial({
-      map: lace, color: paintAt(new THREE.Color(), 96, 1.1), roughness: 0.62, metalness: 0.06,
+      name: 'tower-lace', map: lace, color: paintAt(new THREE.Color(), 96, 1.1), roughness: 0.62, metalness: 0.06,
       alphaTest: 0.5, side: THREE.DoubleSide,
     });
     lace.repeat.set(1, 1);

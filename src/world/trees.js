@@ -27,7 +27,7 @@ function canopyGeometry(detail, rough) {
 function lobedCanopy() {
   const lobes = [[0, 0.08, 0, 0.78], [0.42, -0.12, 0.22, 0.56], [-0.38, -0.02, -0.28, 0.6], [0.04, 0.42, -0.08, 0.5]];
   const parts = lobes.map(([x, y, z, r], i) => {
-    const g = canopyGeometry(1, 0.3 + i * 0.02);
+    const g = canopyGeometry(2, 0.34 + i * 0.02);
     g.scale(r, r, r);
     g.translate(x, y, z);
     return g;
@@ -89,10 +89,16 @@ function foliageMaterial(mode, cull) {
         }`)
       .replace('#include <color_fragment>', `#include <color_fragment>
         float clump = fnoise(vTW * 0.9) * 0.6 + fnoise(vTW * 2.7) * 0.4;
-        diffuseColor.rgb *= 0.62 + 0.62 * clump;
-        diffuseColor.rgb *= mix(0.55, 1.08, smoothstep(-0.8, 0.9, vTH));`);
+        diffuseColor.rgb *= 0.5 + 0.75 * clump * clump;
+        diffuseColor.rgb *= mix(0.45, 1.05, smoothstep(-0.8, 0.9, vTH));`)
+      // leaf clusters: jitter the shading normal so crowns break up into
+      // sunlit and shaded tufts instead of reading as smooth plastic blobs
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+        vec3 lq = vTW * 1.6;
+        vec3 jit = vec3(fnoise(lq), fnoise(lq + 19.1), fnoise(lq + 41.7)) - 0.5;
+        normal = normalize(normal + jit * 1.3);`);
   };
-  m.customProgramCacheKey = () => 'foliage-v3-' + mode;
+  m.customProgramCacheKey = () => 'foliage-v4-' + mode;
   return m;
 }
 
@@ -143,8 +149,8 @@ export function buildTrees({ scene, data, collision }) {
   const leafMid = foliageMaterial(2, cull);
   const leafFar = foliageMaterial(1, cull);
   const canopyNear = lobedCanopy();
-  const bark = new THREE.MeshStandardMaterial({ color: 0x4a4038, roughness: 1 });
-  const palette = ['#56703a', '#4d6a35', '#5f7a3f', '#48652f', '#6a8045', '#526b3a', '#5a7440'].map((c) => new THREE.Color(c));
+  const bark = new THREE.MeshStandardMaterial({ color: 0x5e554b, roughness: 1 });
+  const palette = ['#44602e', '#3d582a', '#4b6634', '#395226', '#526c3a', '#415a2f', '#4a6236'].map((c) => new THREE.Color(c));
   const col = new THREE.Color();
   const M = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
   const total = pts.length;
@@ -154,6 +160,7 @@ export function buildTrees({ scene, data, collision }) {
   let gi = 0;
   for (const [key, list] of chunks) {
     const n = list.length;
+    const first = gi;
     const mats = new THREE.InstancedBufferAttribute(new Float32Array(n * 16), 16);
     const tmats = new THREE.InstancedBufferAttribute(new Float32Array(n * 16), 16);
     const cols = new THREE.InstancedBufferAttribute(new Float32Array(n * 3), 3);
@@ -161,13 +168,14 @@ export function buildTrees({ scene, data, collision }) {
     list.forEach((p, i) => {
       const [x, z, forest] = p;
       const base = terrainHeight(x, z);
-      const rad = forest ? 4.2 + R() * 3.2 : 3.1 + R() * 2.6;
-      const cy = base + (forest ? 9 + R() * 6 : 7 + R() * 4.5);
+      const rad = forest ? 4.2 + R() * 3.2 : 3.6 + R() * 2.4;
+      const vy = forest ? 1.05 + R() * 0.35 : 1.3 + R() * 0.45;
+      const cy = base + (forest ? 9 + R() * 6 : 8.5 + R() * 3.5);
       e.set(0, R() * 6.28, 0); q.setFromEuler(e);
-      M.compose(new THREE.Vector3(x, cy, z), q, new THREE.Vector3(rad, rad * (1.05 + R() * 0.35), rad));
+      M.compose(new THREE.Vector3(x, cy, z), q, new THREE.Vector3(rad, rad * vy, rad));
       M.toArray(mats.array, i * 16);
       M.toArray(allMats.array, gi * 16);
-      M.compose(new THREE.Vector3(x, base - 0.2, z), q, new THREE.Vector3(1 + R() * 0.3, cy - base - rad * 0.5, 1 + R() * 0.3));
+      M.compose(new THREE.Vector3(x, base - 0.2, z), q, new THREE.Vector3(1 + R() * 0.3, cy - base - rad * vy * 0.45, 1 + R() * 0.3));
       M.toArray(tmats.array, i * 16);
       col.copy(palette[Math.floor(R() * palette.length)]).multiplyScalar(0.85 + R() * 0.3);
       col.toArray(cols.array, i * 3);
@@ -191,10 +199,41 @@ export function buildTrees({ scene, data, collision }) {
       return im;
     };
     const hi = mk(canopyHi, leafMid, mats, cols);
-    const nr = mk(canopyNear, leafNear, mats, cols);
     const tr = mk(trunkGeo, bark, tmats, null);
-    groups.push({ key, cx, cz, r: rad2, hi, nr, tr });
+    groups.push({ key, cx, cz, r: rad2, hi, tr, first, n });
   }
+  // near LOD: one small instanced mesh holding only the trees around the
+  // camera, refilled every few metres of travel (the detailed crowns are too
+  // heavy to draw for whole chunks and collapse most of them in the shader)
+  const NEAR_MAX = 3000, SLACK = 25;
+  const near = new THREE.InstancedMesh(canopyNear, leafNear, NEAR_MAX);
+  near.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  near.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(NEAR_MAX * 3), 3).setUsage(THREE.DynamicDrawUsage);
+  near.count = 0;
+  near.castShadow = true;
+  near.receiveShadow = true;
+  near.frustumCulled = false;
+  near.matrixAutoUpdate = false;
+  scene.add(near);
+  const lastFill = new THREE.Vector2(1e9, 1e9);
+  const fillNear = (px, pz, radius) => {
+    const src = allMats.array, dst = near.instanceMatrix.array, csrc = allCols.array, cdst = near.instanceColor.array;
+    let k = 0;
+    for (const gp of groups) {
+      if (Math.hypot(gp.cx - px, gp.cz - pz) - gp.r > radius) continue;
+      for (let i = gp.first; i < gp.first + gp.n && k < NEAR_MAX; i++) {
+        const dx = src[i * 16 + 12] - px, dz = src[i * 16 + 14] - pz;
+        if (dx * dx + dz * dz > radius * radius) continue;
+        for (let j = 0; j < 16; j++) dst[k * 16 + j] = src[i * 16 + j];
+        cdst[k * 3] = csrc[i * 3]; cdst[k * 3 + 1] = csrc[i * 3 + 1]; cdst[k * 3 + 2] = csrc[i * 3 + 2];
+        k++;
+      }
+    }
+    near.count = k;
+    near.instanceMatrix.needsUpdate = true;
+    near.instanceColor.needsUpdate = true;
+    lastFill.set(px, pz);
+  };
   // every tree in a single far-LOD draw call (instances near the camera collapse)
   const far = new THREE.InstancedMesh(canopyLo, leafFar, total);
   far.instanceMatrix = allMats;
@@ -211,11 +250,12 @@ export function buildTrees({ scene, data, collision }) {
       const hiDist = 520 + Math.max(0, p.y) * 0.5;
       const nearDist = p.y > 60 ? 0 : 170;
       cull.value.set(p.x, nearDist, p.z, hiDist);
+      near.visible = nearDist > 0;
+      if (near.visible && Math.hypot(p.x - lastFill.x, p.z - lastFill.y) > SLACK * 0.8) fillNear(p.x, p.z, nearDist + SLACK);
       for (const gp of groups) {
         const d = Math.hypot(gp.cx - p.x, gp.cz - p.z) - gp.r;
         gp.hi.visible = d < hiDist;
         gp.hi.castShadow = d < 700;
-        gp.nr.visible = d < nearDist;
         gp.tr.visible = d < 420 && p.y < 150;
       }
     },

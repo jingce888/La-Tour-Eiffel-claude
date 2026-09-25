@@ -283,7 +283,9 @@ export function buildNearBuildings({ scene, data, collision }) {
   const list = [...data.buildings, ...data.tall];
   for (const b of list) {
     const cx = centroidX(b.outer), cz = centroidZ(b.outer);
-    const key = `${Math.floor(cx / CH)},${Math.floor(cz / CH)}`;
+    // sparse tall landmarks far out share coarse chunks
+    const ch = Math.hypot(cx, cz) > R_DETAIL + 200 ? 4000 : CH;
+    const key = `${ch}:${Math.floor(cx / ch)},${Math.floor(cz / ch)}`;
     if (!chunks.has(key)) chunks.set(key, new Chunk());
     addBuilding(chunks.get(key), b, mansards);
     // collision for buildings near the walkable area
@@ -404,7 +406,7 @@ export function buildFarCity({ scene, data }) {
   // lay out blocks
   let seed = 1234567;
   const R = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
-  const cell = 46 / Math.sqrt(quality.farCity);
+  const cell = 54 / Math.sqrt(quality.farCity);
   const inst = [];
   for (let z = -R1; z < R1; z += cell) {
     for (let x = -R1; x < R1; x += cell) {
@@ -422,17 +424,20 @@ export function buildFarCity({ scene, data }) {
       inst.push([px, base, pz, w, h, d, a, style + (Math.floor(R() * 255) + 0.5) / 256]);
     }
   }
-  const geo = new THREE.BoxGeometry(1, 1, 1);
-  geo.translate(0, 0.5, 0);
-  // drop the bottom face (never visible)
-  const idx = geo.index.array;
-  const keep = [];
-  for (let i = 0; i < idx.length; i += 3) {
-    const ys = [idx[i], idx[i + 1], idx[i + 2]].map((k) => geo.attributes.position.getY(k));
-    if (ys.every((y) => y < 0.01)) continue;
-    keep.push(idx[i], idx[i + 1], idx[i + 2]);
-  }
-  geo.setIndex(keep);
+  // 8 shared corners, 10 triangles: normals come from screen-space derivatives
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute([
+    -0.5, 0, -0.5, 0.5, 0, -0.5, 0.5, 0, 0.5, -0.5, 0, 0.5,
+    -0.5, 1, -0.5, 0.5, 1, -0.5, 0.5, 1, 0.5, -0.5, 1, 0.5,
+  ], 3));
+  geo.setIndex([
+    4, 7, 6, 4, 6, 5,           // top
+    0, 1, 5, 0, 5, 4,           // -z
+    1, 2, 6, 1, 6, 5,           // +x
+    2, 3, 7, 2, 7, 6,           // +z
+    3, 0, 4, 3, 4, 7,           // -x
+  ]);
+  geo.computeBoundingSphere();
   const mat = buildingMaterial({ instanced: true });
   const mesh = new THREE.InstancedMesh(geo, mat, inst.length);
   const bdI = new Float32Array(inst.length * 4);

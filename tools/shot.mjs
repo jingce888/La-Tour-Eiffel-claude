@@ -25,7 +25,7 @@ try {
   logs.push('timeout waiting for __ready');
 }
 const info = await page.evaluate(() => ({ err: window.__error, info: window.__info }));
-await page.screenshot({ path: out });
+await page.screenshot({ path: out, timeout: 180000 });
 console.log(`shot ${out} in ${((Date.now() - t0) / 1000).toFixed(1)}s`, JSON.stringify(info));
 for (const l of logs.slice(0, 40)) console.log(l);
 await browser.close();

@@ -46,7 +46,9 @@ export async function buildWorld({ scene, collision, progress, nextFrame }) {
       near.update(camera);
     },
     setTime(name) {
-      for (const m of buildingMats) m.userData.uniforms.uNight.value = name === 'night' ? 1 : 0;
+      const n = name === 'night' ? 1 : 0;
+      for (const m of buildingMats) m.userData.uniforms.uNight.value = n;
+      ground.mat.userData.uniforms.uNight.value = n;
     },
   };
 }

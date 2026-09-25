@@ -139,9 +139,12 @@ export function fenceMeshTexture() {
     const S = 256, cv = canvas(S, S), g = cv.getContext('2d');
     g.clearRect(0, 0, S, S);
     g.fillStyle = 'rgb(205,205,205)';
-    const n = 6, step = S / n;
-    for (let i = 0; i < n; i++) g.fillRect(i * step + step / 2 - 1.5, 0, 3, S);   // vertical wires
-    for (let i = 0; i < n * 2; i++) g.fillRect(0, i * step / 2 + step / 4 - 1, S, 2); // horizontal wires
+    const n = 5, step = S / n;
+    for (let i = 0; i < n; i++) g.fillRect(i * step + step / 2 - 1, 0, 2, S);     // vertical wires
+    for (let i = 0; i < 2; i++) g.fillRect(0, i * S / 2 + S / 4 - 1, S, 2);        // horizontal wires
     return toTexture(cv);
   });
 }
+
+/** Fence materials (faded out while looking through the telescope). */
+export const FENCES = new Set();

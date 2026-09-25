@@ -10,9 +10,11 @@ import * as THREE from 'three';
 import { L1, L2, L3, legWidth } from '../tower/profile.js';
 import { STATION_Y, CABIN, TOP_LIFT } from '../tower/rails.js';
 import { paintAt } from '../tower/materials.js';
+import { canvas, toTexture } from '../world/textures.js';
 import { mergeStatic } from '../core/merge.js';
 
 const DOOR_TIME = 1.6;
+const RAIL_V = 2.15; // rails run beside the cabin, clear of its 3.5 m width
 const DWELL = 0; // doors stay open until the player acts
 
 function easeMotion(state, target, dt, vmax, amax) {
@@ -50,7 +52,32 @@ function makeDoorLeaf(w, h, frameMat, glassMat) {
   const s2 = new THREE.Mesh(new THREE.BoxGeometry(0.07, h, 0.08), frameMat); s2.position.z = -w / 2 + 0.04;
   fr.add(top, bot, s1, s2, bar);
   g.add(fr, glass);
+  glass.userData.keep = true;
+  mergeStatic(fr);
   return g;
+}
+
+let PANEL_MAT = null;
+/** Brushed-steel push-button panel (one shared texture for every cabin). */
+function panelMaterial() {
+  if (PANEL_MAT) return PANEL_MAT;
+  const cv = canvas(96, 200), c = cv.getContext('2d');
+  const gr = c.createLinearGradient(0, 0, 96, 0);
+  gr.addColorStop(0, '#8d8a84'); gr.addColorStop(0.5, '#b3afa7'); gr.addColorStop(1, '#85827c');
+  c.fillStyle = gr; c.fillRect(0, 0, 96, 200);
+  for (let y = 0; y < 200; y += 2) { c.fillStyle = `rgba(255,255,255,${0.03 + 0.04 * Math.random()})`; c.fillRect(0, y, 96, 1); }
+  c.fillStyle = '#16120e'; c.fillRect(18, 14, 60, 30);                  // floor indicator
+  c.fillStyle = '#ffb347'; c.font = 'bold 22px monospace'; c.textAlign = 'center'; c.textBaseline = 'middle';
+  c.fillText('▲', 48, 30);
+  ['3', '2', '1', '0'].forEach((t, i) => {
+    const y = 72 + i * 32;
+    c.beginPath(); c.arc(48, y, 12, 0, Math.PI * 2); c.fillStyle = '#5b5852'; c.fill();
+    c.beginPath(); c.arc(48, y, 9.5, 0, Math.PI * 2); c.fillStyle = '#d9d5cc'; c.fill();
+    c.fillStyle = '#2a2621'; c.font = 'bold 13px sans-serif'; c.fillText(t, 48, y + 1);
+  });
+  const tex = toTexture(cv, { repeat: false });
+  PANEL_MAT = new THREE.MeshStandardMaterial({ map: tex, metalness: 0.55, roughness: 0.38, emissive: 0x2a1c08, emissiveMap: tex, emissiveIntensity: 0.25 });
+  return PANEL_MAT;
 }
 
 /** Shared cabin interior light + panel look. */
@@ -59,12 +86,14 @@ function cabinShell({ along, across, height, color, glassMat, doorSide = -1 }) {
   const paint = new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.25 });
   const frame = new THREE.MeshStandardMaterial({ color: 0x3a2f27, roughness: 0.5, metalness: 0.4 });
   const floor = new THREE.MeshStandardMaterial({ color: 0x4b3a2c, roughness: 0.85 });
-  const ceil = new THREE.MeshStandardMaterial({ color: 0xf1e7d0, emissive: 0xffe2a8, emissiveIntensity: 0.9, roughness: 0.6 });
+  const ceil = new THREE.MeshStandardMaterial({ color: 0xd6ccb8, roughness: 0.8 });
+  const lamp = new THREE.MeshStandardMaterial({ color: 0xfff4de, emissive: 0xffe6b5, emissiveIntensity: 1.5, roughness: 0.5 });
   const A = along, B = across, Hh = height;
   const add = (geo, mat, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); g.add(m); return m; };
   add(new THREE.BoxGeometry(A, 0.22, B), floor, 0, -0.11, 0);
   add(new THREE.BoxGeometry(A + 0.14, 0.28, B + 0.14), paint, 0, Hh + 0.14, 0);        // roof
-  add(new THREE.BoxGeometry(A - 0.3, 0.04, B - 0.3), ceil, 0, Hh - 0.03, 0);           // light panel
+  add(new THREE.BoxGeometry(A - 0.3, 0.04, B - 0.3), ceil, 0, Hh - 0.03, 0);           // ceiling board
+  for (const z of [-B / 4, B / 4]) add(new THREE.BoxGeometry(A - 0.9, 0.02, 0.18), lamp, 0, Hh - 0.06, z); // light strips
   // lower painted band (dado) + glass above, on the three closed sides
   const dado = 1.0;
   const sides = [
@@ -93,7 +122,7 @@ function cabinShell({ along, across, height, color, glassMat, doorSide = -1 }) {
   add(new THREE.BoxGeometry(0.1, Hh, 0.35), paint, -A / 2, Hh / 2, B / 2 - 0.175);
   add(new THREE.BoxGeometry(0.1, Hh, 0.35), paint, -A / 2, Hh / 2, -B / 2 + 0.175);
   // control panel beside the door
-  const panel = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.5, 0.24), new THREE.MeshStandardMaterial({ color: 0x1d1a17, metalness: 0.6, roughness: 0.3 }));
+  const panel = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.5, 0.24), panelMaterial());
   panel.position.set(-A / 2 + 0.1, 1.35, B / 2 - 0.5);
   g.add(panel);
   const doorW = B - 0.7;
@@ -102,14 +131,11 @@ function cabinShell({ along, across, height, color, glassMat, doorSide = -1 }) {
   leafL.position.set(-A / 2 + 0.02, (Hh - 0.35) / 2, doorW / 4);
   leafR.position.set(-A / 2 + 0.02, (Hh - 0.35) / 2, -doorW / 4);
   g.add(leafL, leafR);
-  const light = new THREE.PointLight(0xffe0b0, 2.2, 7, 2);
-  light.position.set(0, Hh - 0.3, 0);
-  g.add(light);
   g.traverse((o) => { if (o.isMesh && o.material !== glassMat) { o.castShadow = true; o.receiveShadow = true; } });
   for (const leaf of [leafL, leafR]) leaf.traverse((o) => { if (o.isMesh) o.userData.keep = true; });
   mergeStatic(g);
   void doorSide;
-  return { group: g, leafL, leafR, doorW, light };
+  return { group: g, leafL, leafR, doorW };
 }
 
 // ================================================================== incline lift
@@ -137,24 +163,29 @@ export class InclineLift {
     this.shell = shell;
     this.cabin = shell.group;
     this.root.add(this.cabin);
-    // chassis under the cabin, tilted along the rail
+    // chassis: two side frames running on the rails beside the cabin, tilted with the track
     this.chassis = new THREE.Group();
     const cm = new THREE.MeshStandardMaterial({ color: 0x2f2822, roughness: 0.6, metalness: 0.5 });
     for (const s of [-1, 1]) {
-      const beam = new THREE.Mesh(new THREE.BoxGeometry(6.2, 0.35, 0.22), cm);
-      beam.position.set(0, -0.2, s * (CABIN.across / 2 - 0.2));
+      const beam = new THREE.Mesh(new THREE.BoxGeometry(6.4, 0.32, 0.18), cm);
+      beam.position.set(0, 0, s * RAIL_V);
       this.chassis.add(beam);
       for (const e of [-1, 1]) {
-        const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.2, 14), cm);
+        const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.16, 14), cm);
         wheel.rotation.x = Math.PI / 2;
-        wheel.position.set(e * 2.7, -0.45, s * (CABIN.across / 2 - 0.2));
+        wheel.position.set(e * 2.9, -0.2, s * (RAIL_V + 0.12));
         this.chassis.add(wheel);
       }
-      const strut = new THREE.Mesh(new THREE.BoxGeometry(0.16, 1.4, 0.16), cm);
-      strut.position.set(1.4, 0.35, s * (CABIN.across / 2 - 0.2));
-      this.chassis.add(strut);
     }
     this.chassis.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+    // short arms from the cabin corners to the side frames (stay level with the cabin)
+    for (const s of [-1, 1]) {
+      for (const e of [-1, 1]) {
+        const arm = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, RAIL_V - CABIN.across / 2 + 0.05), cm);
+        arm.position.set(e * (CABIN.along / 2 - 0.3), 0.25, s * (CABIN.across / 2 + (RAIL_V - CABIN.across / 2) / 2));
+        this.cabin.add(arm);
+      }
+    }
     this.root.add(this.chassis);
     scene.add(this.root);
     this.buildRails(scene);
@@ -178,10 +209,10 @@ export class InclineLift {
     };
     for (const s of [-1, 1]) {
       let prev = null;
-      for (let y = STATION_Y - 1.2; y <= L2 + 0.01; y += 1.5) {
-        this.rail.pointAtHeight(Math.max(STATION_Y, y), p);
-        p.y = y - 0.85;
-        p.addScaledVector(across, s * (CABIN.across / 2 - 0.2));
+      for (let y = STATION_Y - 1.5; y <= L2 + 1.2; y += 1.5) {
+        this.rail.pointAtHeight(Math.min(L2, Math.max(STATION_Y, y)), p);
+        p.y = y - 0.2;
+        p.addScaledVector(across, s * RAIL_V);
         if (prev) seg(prev, p.clone(), 0.2);
         prev = p.clone();
       }
@@ -191,11 +222,9 @@ export class InclineLift {
       this.rail.pointAtHeight(y, p);
       const half = legWidth(y) * 0.5 - 0.5;
       for (const s of [-1, 1]) {
-        const a = p.clone().addScaledVector(across, s * (CABIN.across / 2 + 0.25)); a.y = y - 0.85;
-        const b = p.clone().addScaledVector(across, s * half); b.y = y - 0.85;
-        seg(a, b, 0.2);
-        const c = p.clone().addScaledVector(across, s * (CABIN.across / 2 - 0.2)); c.y = y - 0.85;
-        seg(c, a, 0.16);
+        const a = p.clone().addScaledVector(across, s * (RAIL_V + 0.15)); a.y = y - 0.25;
+        const b = p.clone().addScaledVector(across, s * half); b.y = y - 0.25;
+        if (half > RAIL_V + 0.6) seg(a, b, 0.2);
       }
     }
     const merged = new THREE.Mesh(mergeList(geos), mat);
@@ -213,7 +242,7 @@ export class InclineLift {
     const horiz = Math.hypot(t.x, t.z);
     const incl = Math.atan2(t.y, horiz); // angle above horizontal, rail goes inward-up
     this.chassis.rotation.set(0, 0, -incl);
-    this.chassis.position.set(0.2, -0.55, 0);
+    this.chassis.position.set(0, -0.2, 0);
     // doors
     const slide = this.door * (this.shell.doorW / 2 - 0.05);
     this.shell.leafL.position.z = this.shell.doorW / 4 + slide;

@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { H, L3, L3_UP, L3_HALF, IRON_TOP, ANTENNA_TOP } from './profile.js';
 import { FACES } from './structure.js';
 import { paintAt } from './materials.js';
-import { deckTexture, fenceMeshTexture, canvas, toTexture } from '../world/textures.js';
+import { deckTexture, fenceMeshTexture, canvas, toTexture, FENCES } from '../world/textures.js';
 
 // Signs on the summit railing: distance and direction of world cities
 export const CITY_SIGNS = [
@@ -41,7 +41,8 @@ export function buildSummit({ group, collision, towerBearingZ }) {
   const steelDark = new THREE.MeshStandardMaterial({ color: paintAt(new THREE.Color(), 280, 0.75), roughness: 0.62, metalness: 0.06 });
   const deckMat = new THREE.MeshStandardMaterial({ map: deckTexture(), roughness: 0.85 });
   const glass = new THREE.MeshStandardMaterial({ color: 0xa9bec2, roughness: 0.04, transparent: true, opacity: 0.16, depthWrite: false, envMapIntensity: 0.7, side: THREE.DoubleSide });
-  const fenceMat = new THREE.MeshStandardMaterial({ map: fenceMeshTexture(), color: paintAt(new THREE.Color(), 280, 1.25), roughness: 0.55, metalness: 0.2, alphaTest: 0.5, alphaToCoverage: true, side: THREE.DoubleSide });
+  const fenceMat = new THREE.MeshStandardMaterial({ map: fenceMeshTexture(), color: paintAt(new THREE.Color(), 280, 1.25), roughness: 0.55, metalness: 0.2, transparent: true, depthWrite: false, alphaTest: 0.01, side: THREE.DoubleSide });
+  FENCES.add(fenceMat);
   const white = new THREE.MeshStandardMaterial({ color: 0xeeeeea, roughness: 0.5, metalness: 0.3 });
   const red = new THREE.MeshStandardMaterial({ color: 0xc8322a, roughness: 0.5, metalness: 0.2 });
   const box = (sx, sy, sz, mat, x, y, z) => {
@@ -171,13 +172,14 @@ export function buildSummit({ group, collision, towerBearingZ }) {
     const idx = top.index; for (let i = 0; i < idx.count; i += 3) { const a = idx.getX(i + 1); idx.setX(i + 1, idx.getX(i + 2)); idx.setX(i + 2, a); }
     const n = top.attributes.normal; for (let i = 0; i < n.count; i++) n.setXYZ(i, 0, 1, 0);
     const mt = new THREE.Mesh(top, deckMat); mt.receiveShadow = true; group.add(mt);
-    // opening railing (three sides; the stair arrives from -z)
+    // railing round the stair well: both sides and the low (-z) end; the stair
+    // arrives at terrace level on the +z end, which stays open
     box(0.06, 1.05, stair.z1 - stair.z0, steel, stair.x0 - 0.18, L3_UP + 0.55, (stair.z0 + stair.z1) / 2);
     box(0.06, 1.05, stair.z1 - stair.z0, steel, stair.x1 + 0.18, L3_UP + 0.55, (stair.z0 + stair.z1) / 2);
-    box(stair.x1 - stair.x0 + 0.4, 1.05, 0.06, steel, (stair.x0 + stair.x1) / 2, L3_UP + 0.55, stair.z1 + 0.08);
-    collision.addSeg(stair.x0 - 0.18, stair.z0 + 0.6, stair.x0 - 0.18, stair.z1, 0.08, L3_UP, L3_UP + 1.2);
-    collision.addSeg(stair.x1 + 0.18, stair.z0 + 0.6, stair.x1 + 0.18, stair.z1, 0.08, L3_UP, L3_UP + 1.2);
-    collision.addSeg(stair.x0 - 0.18, stair.z1 + 0.08, stair.x1 + 0.18, stair.z1 + 0.08, 0.08, L3_UP, L3_UP + 1.2);
+    box(stair.x1 - stair.x0 + 0.4, 1.05, 0.06, steel, (stair.x0 + stair.x1) / 2, L3_UP + 0.55, stair.z0 - 0.12);
+    collision.addSeg(stair.x0 - 0.18, stair.z0 - 0.12, stair.x0 - 0.18, stair.z1, 0.08, L3_UP, L3_UP + 1.2);
+    collision.addSeg(stair.x1 + 0.18, stair.z0 - 0.12, stair.x1 + 0.18, stair.z1, 0.08, L3_UP, L3_UP + 1.2);
+    collision.addSeg(stair.x0 - 0.18, stair.z0 - 0.12, stair.x1 + 0.18, stair.z0 - 0.12, 0.08, L3_UP, L3_UP + 1.2);
     collision.addRect(-L3_HALF, L3_HALF, -L3_HALF, L3_HALF, L3_UP, 'L3UP');
     collision.addHole(stair.x0 - 0.15, stair.x1 + 0.15, stair.z0 - 0.1, stair.z1 + 0.05, L3_UP - 0.5, L3_UP + 0.5);
 
