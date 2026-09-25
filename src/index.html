@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#0e0c0a">
+<meta name="description" content="埃菲尔铁塔 1:1 程序化三维观景游戏：第一人称漫游、沿塔腿曲线运行的斜行电梯、直达塔顶的双厢电梯与真实巴黎街区。">
+<title>埃菲尔铁塔 · La Tour Eiffel</title>
+<style>/*__CSS__*/</style>
+</head>
+<body>
+<div id="app"></div>
+
+<!-- ============================================================ loader -->
+<section id="loader">
+  <div class="ld-inner">
+    <svg class="ld-tower" viewBox="0 0 120 300" aria-hidden="true">
+      <path class="ld-path" pathLength="1" d="M60 6 L60 22 M57 22 L63 22 L65 40 L55 40 Z M55 40 L50 118 M65 40 L70 118 M52 98 L68 98 M44 118 L76 118 L78 124 L42 124 Z M46 124 L32 196 M74 124 L88 196 M53 124 L55 196 M67 124 L65 196 M26 196 L94 196 L96 204 L24 204 Z M29 204 L8 294 M91 204 L112 294 M42 204 L32 294 M78 204 L88 294 M32 294 Q60 236 88 294 M50 140 L70 140 M50 160 L70 160 M46 176 L74 176 M57 58 L63 58 M56 78 L64 78"/>
+    </svg>
+    <h1 class="ld-title">La Tour Eiffel</h1>
+    <p class="ld-sub">埃菲尔铁塔 · 1:1 数字观景之旅</p>
+    <div class="ld-bar"><i id="ld-fill"></i></div>
+    <p class="ld-status" id="ld-status">正在准备…</p>
+  </div>
+  <p class="ld-foot">程序化生成 · 真实比例 330 m · 地图数据 © OpenStreetMap 贡献者</p>
+</section>
+
+<!-- ============================================================ menu -->
+<section id="menu" class="hidden">
+  <div class="mn-card">
+    <p class="mn-kicker">Champ de Mars · Paris</p>
+    <h1 class="mn-title">La Tour Eiffel</h1>
+    <p class="mn-sub">埃菲尔铁塔 · 第一人称观景</p>
+    <button id="btn-start" class="mn-start"><span>开始游览</span><em id="start-hint">Commencer la visite</em></button>
+    <div class="mn-row">
+      <span class="mn-label">时间</span>
+      <div class="chips" id="chips-time"></div>
+    </div>
+    <div class="mn-row">
+      <span class="mn-label">画质</span>
+      <div class="chips" id="chips-quality"></div>
+    </div>
+    <div class="mn-row">
+      <span class="mn-label">起点</span>
+      <div class="chips" id="chips-spawn"></div>
+    </div>
+    <div class="mn-keys">
+      <div><kbd>W A S D</kbd>行走</div><div><kbd>Shift</kbd>快步</div>
+      <div><kbd>鼠标</kbd>环视</div><div><kbd>右键</kbd>望远镜</div>
+      <div><kbd>E</kbd>呼叫 / 乘梯</div><div><kbd>1 2 3</kbd>选择楼层</div>
+      <div><kbd>L</kbd>地标标注</div><div><kbd>T</kbd>切换时间</div>
+      <div><kbd>H</kbd>隐藏界面</div><div><kbd>Esc</kbd>暂停</div>
+    </div>
+    <p class="mn-note" id="mn-note"></p>
+  </div>
+</section>
+
+<!-- ============================================================ HUD -->
+<section id="hud" class="hidden">
+  <div class="compass"><div class="cp-track" id="cp-track"></div><i class="cp-needle"></i><b id="cp-deg">0°</b></div>
+
+  <div class="loc">
+    <div class="loc-gauge">
+      <svg viewBox="0 0 40 120" aria-hidden="true"><path d="M20 2 L20 8 M19 8 L21 8 L22 16 L18 16 Z M18 16 L15 47 M22 16 L25 47 M13 47 L27 47 M14 49 L8 80 M26 49 L32 80 M6 80 L34 80 M8 82 L2 118 M32 82 L38 118 M12 118 Q20 98 28 118"/></svg>
+      <i id="loc-marker"></i>
+    </div>
+    <div class="loc-text">
+      <p class="loc-fr" id="loc-fr">PARVIS</p>
+      <p class="loc-cn" id="loc-cn">塔底广场</p>
+      <p class="loc-alt"><span>高度</span><b id="loc-alt">0.0</b><span>m</span></p>
+    </div>
+  </div>
+
+  <div class="lift hidden" id="lift">
+    <p class="lift-name" id="lift-name">东塔柱电梯</p>
+    <div class="lift-read">
+      <div><span>高度</span><b id="lift-alt">0.0</b><em>m</em></div>
+      <div><span>速度</span><b id="lift-spd">0.0</b><em>m/s</em></div>
+      <div><span>倾角</span><b id="lift-ang">—</b><em>°</em></div>
+    </div>
+    <div class="lift-track"><i id="lift-dot"></i><div id="lift-stops"></div></div>
+    <div class="lift-btns" id="lift-btns"></div>
+    <p class="lift-state" id="lift-state">门已开启</p>
+  </div>
+
+  <div class="prompt hidden" id="prompt"></div>
+  <div class="caption" id="caption"><p class="cap-fr" id="cap-fr"></p><p class="cap-cn" id="cap-cn"></p><p class="cap-info" id="cap-info"></p></div>
+  <div class="toast" id="toast"></div>
+  <div class="labels" id="labels"></div>
+  <i class="crosshair" id="crosshair"></i>
+  <div class="scope" id="scope"></div>
+  <p class="fps" id="fps"></p>
+  <div class="hint" id="hint"><kbd>E</kbd> 交互 <kbd>右键</kbd> 望远镜 <kbd>L</kbd> 地标 <kbd>T</kbd> 时间 <kbd>Esc</kbd> 菜单</div>
+</section>
+
+<!-- ============================================================ touch -->
+<section id="touch">
+  <div id="stick"><i class="knob"></i></div>
+  <div class="tbtns">
+    <button data-act="KeyE">乘梯</button>
+    <button data-act="Zoom">望远</button>
+    <button data-act="Space">跳</button>
+    <button data-act="Run">快步</button>
+    <button data-act="KeyL">地标</button>
+    <button data-act="Escape">菜单</button>
+  </div>
+</section>
+
+<script type="module">/*__JS__*/</script>
+</body>
+</html>

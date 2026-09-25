@@ -1,0 +1,16 @@
+{
+  "name": "eiffel-tower-3d",
+  "version": "2.0.0",
+  "private": true,
+  "description": "La Tour Eiffel · 1:1 procedural 3D observation game (first-person, inclined & summit elevators, real Paris surroundings)",
+  "type": "module",
+  "scripts": {
+    "build": "node tools/build.mjs",
+    "dev": "node tools/build.mjs --watch"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "playwright": "^1.56.1",
+    "three": "0.186.1"
+  }
+}
