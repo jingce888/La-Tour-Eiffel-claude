@@ -246,7 +246,7 @@ function clipRing(flat, clip) {
 
 export const NEAR_R = 8000;
 
-export function buildGround({ scene, data }) {
+export function buildGround({ scene, data, holes = [] }) {
   const midSize = quality.groundTex;
   const tex = {
     local: toTexture(paint(data, 0, 0, 450, 2048, 'local'), { repeat: false }),
@@ -273,6 +273,8 @@ export function buildGround({ scene, data }) {
       if (hc.length >= 3) islands.push(hc);
     }
   }
+  // lift pits at the ground stations
+  for (const h of holes) shape.holes.push(new THREE.Path(h.map(([x, z]) => new THREE.Vector2(x, z))));
   const geo = new THREE.ShapeGeometry(shape, 1);
   geo.rotateX(Math.PI / 2);            // shape (x, y) → world (x, 0, y)
   flipUp(geo);

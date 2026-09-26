@@ -7,7 +7,7 @@ import { buildTrees } from './trees.js';
 import { buildLandmarkModels, LandmarkGuide } from './landmarks.js';
 import { terrainHeight } from './geo.js';
 
-export async function buildWorld({ scene, collision, progress, nextFrame }) {
+export async function buildWorld({ scene, collision, progress, nextFrame, groundHoles = [] }) {
   progress(0.02, '解压巴黎地图数据…');
   await nextFrame();
   const data = await loadParis();
@@ -15,7 +15,7 @@ export async function buildWorld({ scene, collision, progress, nextFrame }) {
 
   progress(0.12, `绘制地表：塞纳河、公园与 ${data.roads.length.toLocaleString()} 条街道`);
   await nextFrame();
-  const ground = buildGround({ scene, data });
+  const ground = buildGround({ scene, data, holes: groundHoles });
   const water = buildWater({ scene, data, riverRings: ground.riverRings, collision });
 
   progress(0.35, `建造街区：${(data.buildings.length + data.tall.length).toLocaleString()} 栋真实建筑`);

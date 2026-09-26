@@ -8,6 +8,8 @@ import { FACES, G1, G2, archBandGeometries } from './structure.js';
 import { paintAt } from './materials.js';
 import { canvas, toTexture, deckTexture, fenceMeshTexture, FENCES } from '../world/textures.js';
 import { latticeTextures } from './lattice.js';
+import { shaftLanding, buildShaftRailing } from './shaft.js';
+import { TOP_LIFT } from './rails.js';
 
 // 18 names per façade (engraved in gold letters, 1889 / restored 1986-87)
 const NAMES = {
@@ -96,7 +98,8 @@ function ringShape(outer, inner, holes) {
   const s = new THREE.Shape();
   s.moveTo(-outer, -outer); s.lineTo(outer, -outer); s.lineTo(outer, outer); s.lineTo(-outer, outer); s.closePath();
   const hi = new THREE.Path();
-  hi.moveTo(-inner, -inner); hi.lineTo(-inner, inner); hi.lineTo(inner, inner); hi.lineTo(inner, -inner); hi.closePath();
+  const ix = typeof inner === 'number' ? inner : inner.x, iz = typeof inner === 'number' ? inner : inner.z;
+  hi.moveTo(-ix, -iz); hi.lineTo(-ix, iz); hi.lineTo(ix, iz); hi.lineTo(ix, -iz); hi.closePath();
   s.holes.push(hi);
   for (const poly of holes) {
     const p = new THREE.Path();
@@ -372,7 +375,7 @@ export function buildFloors({ group, collision, rails, materials }) {
     collision.addRect(-L1_HALF, L1_HALF, -L1_HALF, -L1_VOID, L1, 'L1');
     collision.addRect(L1_VOID, L1_HALF, -L1_VOID, L1_VOID, L1, 'L1');
     collision.addRect(-L1_HALF, -L1_VOID, -L1_VOID, L1_VOID, L1, 'L1');
-    for (const k of Object.keys(out.holes)) if (k.endsWith('1')) registerShaft(collision, out.holes[k], L1);
+    for (const k of Object.keys(out.holes)) if (k.endsWith('1')) registerShaft({ collision, group, material: steelMat2 }, out.holes[k], L1);
   }
 
   // ---------------------------------------------------------------- 2nd floor
@@ -383,8 +386,15 @@ export function buildFloors({ group, collision, rails, materials }) {
       out.holes[name + '2'] = { rail, h, y: L2 };
       holes.push(holePoly(rail, h));
     }
-    const shape = ringShape(L2_HALF, 0.5, holes);
+    // the summit lifts' shaft opens into a shallow pit: the cabin floors never
+    // sit flush with (and flicker against) the deck
+    const pitX = TOP_LIFT.x[1] + TOP_LIFT.size / 2 + 0.1, pitZ = TOP_LIFT.size / 2 + 0.12;
+    const shape = ringShape(L2_HALF, { x: pitX, z: pitZ }, holes);
     group.add(slab(shape, L2, 0.9, deckMat, steelMat2, 0.9));
+    const pitFloor = new THREE.Mesh(new THREE.BoxGeometry(2 * pitX, 0.1, 2 * pitZ), steelMat2);
+    pitFloor.position.set(0, L2 - 0.35, 0);
+    pitFloor.receiveShadow = true;
+    group.add(pitFloor);
 
     // flared cornice with consoles, one band per face
     const tex = friezeTexture([], G2.yt, L2, false);
@@ -491,17 +501,14 @@ export function buildFloors({ group, collision, rails, materials }) {
 
     // walkable 2nd floor ring (the lift core interior is walkable too)
     collision.addRect(-L2_HALF, L2_HALF, -L2_HALF, L2_HALF, L2, 'L2');
-    for (const k of Object.keys(out.holes)) if (k.endsWith('2')) registerShaft(collision, out.holes[k], L2);
+    for (const k of Object.keys(out.holes)) if (k.endsWith('2')) registerShaft({ collision, group, material: steelMat2 }, out.holes[k], L2);
   }
   return out;
 }
 
-/** Fences around a lift shaft opening; the doorway (inner side) is gated by the lift itself. */
-function registerShaft(collision, { rail, h }, y) {
-  const P = (u, v) => rail.toXZ(u, v);
-  const c = [P(h.u0, -h.v), P(h.u1, -h.v), P(h.u1, h.v), P(h.u0, h.v)];
-  collision.addSeg(c[0][0], c[0][1], c[1][0], c[1][1], 0.1, y, y + 2.2);
-  collision.addSeg(c[1][0], c[1][1], c[2][0], c[2][1], 0.1, y, y + 2.2);
-  collision.addSeg(c[2][0], c[2][1], c[3][0], c[3][1], 0.1, y, y + 2.2);
-  collision.addPolyHole(c, y - 1, y + 0.5);
+/** Guard rails around a lift shaft opening (the doorway is gated by the lift itself) + the floor hole. */
+function registerShaft({ collision, group, material }, { rail }, y) {
+  const { poly } = shaftLanding(rail, y);
+  buildShaftRailing({ rail, y, collision, material, group });
+  collision.addPolyHole(poly, y - 1, y + 0.5);
 }

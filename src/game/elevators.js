@@ -8,13 +8,12 @@
 // so riders see their twin cabin sweep past half-way up.
 import * as THREE from 'three';
 import { L1, L2, L3, legWidth } from '../tower/profile.js';
-import { STATION_Y, CABIN, TOP_LIFT } from '../tower/rails.js';
+import { STATION_Y, CABIN, TOP_LIFT, RAIL_V } from '../tower/rails.js';
 import { paintAt } from '../tower/materials.js';
 import { canvas, toTexture } from '../world/textures.js';
 import { mergeStatic } from '../core/merge.js';
 
 const DOOR_TIME = 1.6;
-const RAIL_V = 2.15; // rails run beside the cabin, clear of its 3.5 m width
 const DWELL = 0; // doors stay open until the player acts
 
 function easeMotion(state, target, dt, vmax, amax) {
@@ -187,6 +186,11 @@ export class InclineLift {
       }
     }
     this.root.add(this.chassis);
+    // bridge plate: slides out over the landing edge as the doors open
+    this.sillPlate = new THREE.Mesh(new THREE.BoxGeometry(1, 0.04, shell.doorW + 0.2),
+      new THREE.MeshStandardMaterial({ color: 0x6a655d, metalness: 0.7, roughness: 0.35 }));
+    this.sillPlate.receiveShadow = true;
+    this.cabin.add(this.sillPlate);
     scene.add(this.root);
     this.buildRails(scene);
     this.sync(0);
@@ -207,18 +211,23 @@ export class InclineLift {
       g.translate(a.x, a.y, a.z);
       geos.push(g);
     };
+    // below the ground station the rails continue straight into the pit
+    const p0 = this.rail.pointAtHeight(STATION_Y), t0 = this.rail.tangentAtHeight(STATION_Y);
     for (const s of [-1, 1]) {
       let prev = null;
-      for (let y = STATION_Y - 1.5; y <= L2 + 1.2; y += 1.5) {
-        this.rail.pointAtHeight(Math.min(L2, Math.max(STATION_Y, y)), p);
+      for (let y = STATION_Y - 3.3; y <= L2 + 1.2; y += 1.5) {
+        if (y < STATION_Y) p.copy(p0).addScaledVector(t0, (y - STATION_Y) / t0.y);
+        else this.rail.pointAtHeight(Math.min(L2, y), p);
         p.y = y - 0.2;
         p.addScaledVector(across, s * RAIL_V);
         if (prev) seg(prev, p.clone(), 0.2);
         prev = p.clone();
       }
     }
-    // side brackets every ~4 m tying the rails to the leg faces (outside the cabin's sweep)
+    // side brackets every ~4 m tying the rails to the leg faces (outside the
+    // cabin's sweep) — none across the 1st-floor landing, where people walk
     for (let y = 4; y < L2 - 1; y += 4) {
+      if (y - 0.25 > L1 - 1.3 && y - 0.25 < L1 + 3.6) continue;
       this.rail.pointAtHeight(y, p);
       const half = legWidth(y) * 0.5 - 0.5;
       for (const s of [-1, 1]) {
@@ -228,6 +237,7 @@ export class InclineLift {
       }
     }
     const merged = new THREE.Mesh(mergeList(geos), mat);
+    merged.name = 'lift-rails-' + this.name;
     merged.castShadow = true;
     merged.receiveShadow = true;
     scene.add(merged);
@@ -247,6 +257,10 @@ export class InclineLift {
     const slide = this.door * (this.shell.doorW / 2 - 0.05);
     this.shell.leafL.position.z = this.shell.doorW / 4 + slide;
     this.shell.leafR.position.z = -this.shell.doorW / 4 - slide;
+    const ext = 0.4 * this.door;
+    this.sillPlate.visible = ext > 0.01;
+    this.sillPlate.scale.x = Math.max(ext, 0.001);
+    this.sillPlate.position.set(-CABIN.along / 2 - ext / 2, -0.015, 0); // top 5 mm proud of the floor
     this.inclination = incl;
     void dt;
   }
@@ -264,7 +278,10 @@ export class InclineLift {
   }
   floorAt(x, z) {
     const [lx, lz] = this.toLocal(x, z);
-    if (Math.abs(lx) <= CABIN.along / 2 + 0.05 && Math.abs(lz) <= CABIN.across / 2 + 0.05) return this.pos.y;
+    // docked with the doors open, the sill plate bridges the few centimetres
+    // between the cabin floor and the landing edge
+    const sill = this.mode !== 'moving' && this.door > 0.3 ? 0.45 : 0.05;
+    if (lx <= CABIN.along / 2 + 0.05 && lx >= -CABIN.along / 2 - sill && Math.abs(lz) <= CABIN.across / 2 + 0.05) return this.pos.y;
     return null;
   }
   /** Walls of the cabin (+ door when closed) and landing gates. */
@@ -302,27 +319,38 @@ export class InclineLift {
       }
     }
     // landing gates: the doorway line at each stop is closed unless docked & open
+    // (they only concern people walking on a landing, never the cabin's riders)
+    const [rx, rz] = this.toLocal(p.x, p.z);
+    if (Math.abs(rx) < A && Math.abs(rz) < B && y0 < this.pos.y + CABIN.height && y1 > this.pos.y) return hit;
     for (let i = 0; i < this.stops.length; i++) {
       const sy = this.stops[i].y;
-      if (y1 < sy || y0 > sy + 2.2) continue;
+      if (y0 < sy - 0.2 || y0 > sy + 1.0) continue; // y0 = feet + step height
       const docked = this.mode !== 'moving' && this.stopIndex === i && this.door > 0.85;
       if (docked) continue;
       const pt = this.rail.pointAtHeight(sy);
-      const [lx, lz] = [0, 0];
-      void lx; void lz;
       // gate: segment across the door plane at the landing
       const o = this.rail.dirOut, a = this.axisZ;
       const gx = pt.x - o.x * (A + 0.35), gz = pt.z - o.z * (A + 0.35);
       const ax = gx + a.x * B, az = gz + a.z * B, bx = gx - a.x * B, bz = gz - a.z * B;
       const dx = bx - ax, dz = bz - az, L = dx * dx + dz * dz;
-      let t = ((p.x - ax) * dx + (p.z - az) * dz) / L;
-      t = Math.max(0, Math.min(1, t));
-      const qx = ax + dx * t, qz = az + dz * t;
-      const ex = p.x - qx, ez = p.z - qz, d = Math.hypot(ex, ez);
-      if (d < r + 0.05) {
-        const push = r + 0.05 - d;
-        const nx = d > 1e-6 ? ex / d : -o.x, nz = d > 1e-6 ? ez / d : -o.z;
-        p.x += nx * push; p.z += nz * push; hit = true;
+      const tRaw = ((p.x - ax) * dx + (p.z - az) * dz) / L;
+      const along = (p.x - gx) * o.x + (p.z - gz) * o.z; // > 0: shaft side
+      if (tRaw > 0 && tRaw < 1) {
+        // in front of the doorway: keep the walker on the landing side — also
+        // anyone caught between the gate and a cabin that just closed its doors
+        // (riders inside the cabin are more than 0.6 m past the gate)
+        if (along > -(r + 0.05) && along < 0.6) {
+          const push = r + 0.05 + along;
+          p.x -= o.x * push; p.z -= o.z * push; hit = true;
+        }
+      } else {
+        const t = Math.max(0, Math.min(1, tRaw));
+        const qx = ax + dx * t, qz = az + dz * t;
+        const ex = p.x - qx, ez = p.z - qz, d = Math.hypot(ex, ez);
+        if (d < r + 0.05 && d > 1e-6) {
+          const push = r + 0.05 - d;
+          p.x += ex / d * push; p.z += ez / d * push; hit = true;
+        }
       }
     }
     return hit;
@@ -426,12 +454,14 @@ export class DuoLift {
         const m = new THREE.Mesh(g, cable);
         m.position.set(c.x + 0.1, 0, dz);
         m.userData.cable = c.i;
+        m.name = 'duo-cable';
         scene.add(m);
         cgeos.push(m);
       }
     }
     this.cables = cgeos;
     const merged = new THREE.Mesh(mergeList(geos), mat);
+    merged.name = 'duo-shaft';
     merged.castShadow = true;
     scene.add(merged);
   }

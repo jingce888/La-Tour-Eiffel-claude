@@ -12,6 +12,9 @@ import { L1, L2, L3, legCentre } from './profile.js';
 
 export const STATION_Y = 0.45;   // cabin floor at the ground station (raised platform)
 export const CABIN = { along: 4.0, across: 3.5, height: 2.9 };
+export const RAIL_V = 2.15;      // the two rails run beside the cabin, clear of its 3.5 m width
+export const SHAFT_V = RAIL_V + 0.4; // half-width of every opening the lift passes (rails, chassis, wheels)
+const FLOOR_T = 0.22;            // cabin floor slab under the walking surface
 
 export class InclineRail {
   constructor(sx, sz) {
@@ -59,19 +62,24 @@ export class InclineRail {
     const p = this.pointAtHeight(y);
     return Math.hypot(p.x, p.z);
   }
-  /** Plan-view rectangle (in diagonal coordinates) the cabin sweeps through a slab at height yS. */
-  holeAt(yS, pad = 0.35) {
-    const ys = [];
-    for (let t = -CABIN.height - 2.2; t <= 2.4; t += 0.2) ys.push(yS + t);
-    let u0 = Infinity, u1 = -Infinity;
-    for (const y of ys) {
-      if (y < STATION_Y - 1 || y > L2 + 0.01) continue;
-      const r = this.radial(y);
-      u0 = Math.min(u0, r - CABIN.along / 2);
-      u1 = Math.max(u1, r + CABIN.along / 2);
-    }
-    return { u0: u0 - pad, u1: u1 + pad, v: CABIN.across / 2 + pad };
+  /**
+   * Plan-view rectangle (diagonal coordinates) to cut from a floor slab whose
+   * top is at the landing height yS.  The rail climbs inwards, so:
+   *  - door side (u0): the cabin only crosses the slab plane from below, and
+   *    once its floor has risen FLOOR_T above the landing it clears the deck —
+   *    the opening stops right at the door sill, leaving no gap to fall into;
+   *  - far side (u1): everything the cabin sweeps while still under the slab;
+   *  - sides (v): rails, chassis frames and wheels.
+   */
+  holeAt(yS, pad = 0.12) {
+    const A = CABIN.along / 2 + 0.07; // roof overhang
+    const u0 = this.radial(yS + FLOOR_T) - A - pad;
+    let u1 = this.radial(yS) + A;
+    for (let y = yS; y >= Math.max(STATION_Y, yS - CABIN.height - 2.6); y -= 0.2) u1 = Math.max(u1, this.radial(y) + A);
+    return { u0, u1: u1 + pad, v: SHAFT_V };
   }
+  /** Door sill line of a landing (diagonal u) and the doorway half-width. */
+  sillAt(yS) { return this.radial(yS) - CABIN.along / 2; }
   /** Converts diagonal-frame (u along, v across) to world x/z. */
   toXZ(u, v) {
     return [this.dirOut.x * u + this.dirAcross.x * v, this.dirOut.z * u + this.dirAcross.z * v];

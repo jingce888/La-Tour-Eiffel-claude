@@ -77,7 +77,28 @@ s = await page.evaluate(([x, z]) => window.walkTo(x, z, 10), cab);
 log('inside cabin', s);
 if (!s.inside) fail('player did not enter the incline lift');
 await shot('p1_in_cabin');
-// 3. press 2 → ride to the 2nd floor (hold Shift to fast-forward)
+// 3. press 1 → ride to the 1st floor, step out onto the landing, look around
+s = await page.evaluate(() => window.step(1, [], ['Digit1']));
+for (let i = 0; i < 12 && !(s.lift.startsWith('open') && s.y > 50); i++) s = await page.evaluate(() => window.step(5, ['ShiftLeft']));
+log('arrived at the 1st floor', s);
+if (Math.abs(s.y - 57.63) > 0.3) fail('did not arrive at the 1st floor, y=' + s.y);
+s = await page.evaluate(() => window.step(2));
+const L = () => page.evaluate(() => { const l = window.__game.lifts[0]; return { x: l.pos.x, z: l.pos.z, ox: l.rail.dirOut.x, oz: l.rail.dirOut.z, ax: l.axisZ.x, az: l.axisZ.z }; });
+let lf = await L();
+s = await page.evaluate(([x, z]) => window.walkTo(x, z, 10), [lf.x - lf.ox * 5.5, lf.z - lf.oz * 5.5]);
+log('walked out onto the 1st floor', s);
+if (Math.abs(s.y - 57.63) > 0.05 || s.inside) fail('lost footing stepping out at the 1st floor, y=' + s.y);
+// squeeze past the doorway beside the cabin, towards the shaft: must be stopped on the landing
+s = await page.evaluate(([x, z]) => window.walkTo(x, z, 4), [lf.x - lf.ox * 3.2 + lf.ax * 2.3, lf.z - lf.oz * 3.2 + lf.az * 2.3]);
+s = await page.evaluate(([x, z]) => window.walkTo(x, z, 4), [lf.x + lf.ax * 2.3, lf.z + lf.az * 2.3]);
+log('pushing beside the doorway', s);
+if (Math.abs(s.y - 57.63) > 0.05) fail('fell into the shaft beside the doorway at the 1st floor, y=' + s.y);
+// back into the cabin, on to the 2nd floor
+s = await page.evaluate(([x, z]) => window.walkTo(x, z, 6), [lf.x - lf.ox * 3.5, lf.z - lf.oz * 3.5]);
+s = await page.evaluate(([x, z]) => window.walkTo(x, z, 8), [lf.x + lf.ox * 0.6, lf.z + lf.oz * 0.6]);
+log('back inside the cabin', s);
+if (!s.inside) fail('could not re-enter the lift at the 1st floor');
+// 4. press 2 → ride to the 2nd floor (hold Shift to fast-forward)
 s = await page.evaluate(() => window.step(1, [], ['Digit2']));
 log('pressed 2', s);
 for (let i = 0; i < 12 && !(s.lift.startsWith('open') && s.y > 110); i++) {
@@ -87,7 +108,7 @@ for (let i = 0; i < 12 && !(s.lift.startsWith('open') && s.y > 110); i++) {
 }
 if (Math.abs(s.y - 115.73) > 0.3) fail('did not arrive at the 2nd floor, y=' + s.y);
 s = await page.evaluate(() => window.step(2));
-// 4. walk out towards the central hall of the summit lifts
+// 5. walk out towards the central hall of the summit lifts
 s = await page.evaluate(() => window.walkTo(7.5, 7.5, 15));
 log('stepped out on 2nd floor', s);
 s = await page.evaluate(() => window.walkTo(0.2, 7.2, 15));
@@ -108,7 +129,7 @@ for (let i = 0; i < 14 && !(s.duo.startsWith('open') && s.y > 270); i++) {
 }
 if (Math.abs(s.y - 276.13) > 0.3) fail('did not arrive at the summit, y=' + s.y);
 s = await page.evaluate(() => window.step(2));
-// 5. walk out and climb the stair to the terrace
+// 6. walk out and climb the stair to the terrace
 s = await page.evaluate(() => window.walkTo(-1.55, 3.4, 8));
 log('out of the lift at the top', s);
 s = await page.evaluate(() => window.walkTo(7.2, 3.4, 12));
@@ -121,11 +142,13 @@ s = await page.evaluate(() => window.walkTo(0, 7.2, 12));
 log('on the terrace', s);
 if (s.y < 279) fail('did not reach the open terrace, y=' + s.y);
 await shot('p4_terrace');
-// 6. try to walk through the fence: must be stopped
+// 7. try to walk through the fence: must be stopped
 s = await page.evaluate(() => { window.face(0, 30); return window.step(4, ['KeyW']); });
 log('pushing against the fence', s);
 if (s.z > 9.4) fail('walked through the summit fence');
 
+const rescues = await page.evaluate(() => window.__game.rescues);
+if (rescues) fail(`the fall safety net had to rescue the player ${rescues} time(s)`);
 console.log(errors.length ? `\n${errors.length} problem(s):\n- ` + errors.join('\n- ') : '\nPLAYTEST PASSED');
 await browser.close();
 process.exit(errors.length ? 1 : 0);

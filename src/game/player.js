@@ -29,11 +29,17 @@ export class Player {
     this.stepDist = 0;
     this.onStep = null;           // footstep callback(surface)
     this.speedFactor = 1;
+    // last solid footing, sampled twice a second (the older sample is used, so
+    // a rescue never puts the player back right on the edge they fell from)
+    this.safe = [new THREE.Vector3(), new THREE.Vector3()];
+    this.safeT = 0;
+    this.hasSafe = false;
   }
 
   teleport(x, y, z, yaw = this.yaw, pitch = 0) {
     this.pos.set(x, y, z);
     this.vel.set(0, 0, 0);
+    this.hasSafe = false;
     this.yaw = yaw; this.pitch = pitch;
     this.eyeSmooth = EYE;
   }
@@ -95,7 +101,26 @@ export class Player {
     } else {
       this.onGround = false;
     }
-    if (this.pos.y < -30) this.pos.y = 0;   // safety net
+    // safety net: nowhere in the game can one legitimately drop more than a
+    // stair step, so a free fall past ~4.7 m means a gap in the world
+    const solid = this.onGround && (this.groundTag === null || typeof this.groundTag !== 'object');
+    if (solid) {
+      this.safeT -= dt;
+      if (!this.hasSafe || this.safeT <= 0) {
+        this.safe[1].copy(this.hasSafe ? this.safe[0] : this.pos);
+        this.safe[0].copy(this.pos);
+        this.hasSafe = true;
+        this.safeT = 0.5;
+      }
+    }
+    if (!this.onGround && this.vel.y < -14 && this.hasSafe) {
+      this.pos.copy(this.safe[1]);
+      this.vel.set(0, 0, 0);
+      this.onGround = true;
+      this.groundTag = null;
+      this.onRescue && this.onRescue();
+    }
+    if (this.pos.y < -30) this.pos.y = 0;   // last resort
 
     // footsteps & head bob
     const hs = Math.hypot(this.vel.x, this.vel.z);

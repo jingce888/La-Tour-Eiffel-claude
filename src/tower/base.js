@@ -2,7 +2,8 @@
 // parvis, and the East / West pillar lift stations.
 import * as THREE from 'three';
 import { H, C } from './profile.js';
-import { STATION_Y, CABIN } from './rails.js';
+import { STATION_Y } from './rails.js';
+import { shaftLanding, buildShaftRailing } from './shaft.js';
 import { canvas, toTexture } from '../world/textures.js';
 
 function signTexture(title, sub) {
@@ -41,7 +42,7 @@ export function buildBase({ group, collision, rails }) {
 
   // ---------------------------------------------------------------- lift stations
   const plat = new THREE.MeshStandardMaterial({ color: 0x9c958a, roughness: 0.85 });
-  const dark = new THREE.MeshStandardMaterial({ color: 0x171512, roughness: 1 });
+  const pitMat = new THREE.MeshStandardMaterial({ color: 0x3a3632, roughness: 0.95 });
   const steel = new THREE.MeshStandardMaterial({ color: 0x3a2f26, roughness: 0.55, metalness: 0.4 });
   const glass = new THREE.MeshStandardMaterial({ color: 0xaac0c4, roughness: 0.05, transparent: true, opacity: 0.16, depthWrite: false, envMapIntensity: 0.7 });
   const labels = { E: ['PILIER EST', '东塔柱 · 观光电梯'], W: ['PILIER OUEST', '西塔柱 · 观光电梯'] };
@@ -51,9 +52,16 @@ export function buildBase({ group, collision, rails }) {
     const lo = C(0) + 5, hi = C(0) + 15.5;      // platform square inside the leg
     const x0 = sx * lo, x1 = sx * hi, z0 = sz * lo, z1 = sz * hi;
     const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, w = hi - lo;
-    // platform slab with the pit for the cabin carved as a separate dark box
-    const slab = new THREE.Mesh(new THREE.BoxGeometry(w, STATION_Y, w), plat);
-    slab.position.set(cx, STATION_Y / 2, cz);
+    // cabin pit: the opening the cabin rises out of (rails, chassis and the
+    // lower half of the running gear stay below the platform while boarding)
+    const { poly: pc, hole, sill } = shaftLanding(rail, STATION_Y);
+    // platform slab with the pit cut out
+    const shape = new THREE.Shape([new THREE.Vector2(x0, z0), new THREE.Vector2(x1, z0), new THREE.Vector2(x1, z1), new THREE.Vector2(x0, z1)]);
+    shape.holes.push(new THREE.Path(pc.map(([x, z]) => new THREE.Vector2(x, z))));
+    const slabGeo = new THREE.ExtrudeGeometry(shape, { depth: STATION_Y, bevelEnabled: false, curveSegments: 1 });
+    slabGeo.rotateX(Math.PI / 2);          // shape (x, y) → world (x, z); extrusion goes down
+    slabGeo.translate(0, STATION_Y, 0);
+    const slab = new THREE.Mesh(slabGeo, plat);
     slab.receiveShadow = true;
     group.add(slab);
     collision.addRect(x0, x1, z0, z1, STATION_Y, 'station');
@@ -69,46 +77,39 @@ export function buildBase({ group, collision, rails }) {
     group.add(rx, rz);
     collision.addRamp(sx * (lo - rampLen), sx * lo, z0, z1, 0, STATION_Y, 'x', 'ramp');
     collision.addRamp(x0, x1, sz * (lo - rampLen), sz * lo, 0, STATION_Y, 'z', 'ramp');
-    // cabin pit: hole in the platform where the rails dive into the ground
-    const r0 = rail.radial(STATION_Y);
-    const hu0 = r0 - CABIN.along / 2 - 0.3, hu1 = r0 + CABIN.along / 2 + 3.5, hv = CABIN.across / 2 + 0.3;
-    const pc = [rail.toXZ(hu0, -hv), rail.toXZ(hu1, -hv), rail.toXZ(hu1, hv), rail.toXZ(hu0, hv)];
     collision.addPolyHole(pc, -2, STATION_Y + 0.5);
-    const pitShape = new THREE.Shape(pc.map(([x, z]) => new THREE.Vector2(x, z)));
-    const pitGeo = new THREE.ShapeGeometry(pitShape);
-    pitGeo.rotateX(Math.PI / 2);
-    const idx = pitGeo.index;
-    for (let i = 0; i < idx.count; i += 3) { const a = idx.getX(i + 1); idx.setX(i + 1, idx.getX(i + 2)); idx.setX(i + 2, a); }
-    const pit = new THREE.Mesh(pitGeo, dark);
-    pit.position.y = STATION_Y + 0.012;
-    group.add(pit);
-    // fences around the pit on three sides; the door side (pc[3]→pc[0]) is gated by the lift
-    for (let i = 0; i < 3; i++) {
-      const a = pc[i], b = pc[(i + 1) % 4];
-      collision.addSeg(a[0], a[1], b[0], b[1], 0.08, STATION_Y, STATION_Y + 1.2);
-      const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
-      const rail3d = new THREE.Mesh(new THREE.BoxGeometry(len, 0.06, 0.06), steel);
-      rail3d.position.set((a[0] + b[0]) / 2, STATION_Y + 1.05, (a[1] + b[1]) / 2);
-      rail3d.rotation.y = -Math.atan2(b[1] - a[1], b[0] - a[0]);
-      group.add(rail3d);
-      for (let t = 0; t <= 1.001; t += 0.25) {
-        const post = new THREE.Mesh(new THREE.BoxGeometry(0.06, 1.05, 0.06), steel);
-        post.position.set(a[0] + (b[0] - a[0]) * t, STATION_Y + 0.52, a[1] + (b[1] - a[1]) * t);
-        group.add(post);
-      }
+    // pit lining: concrete walls and floor, 3 m deep
+    const PIT = 3.0;
+    const ry = -Math.atan2(rail.dirOut.z, rail.dirOut.x);
+    const pitWalls = [];
+    const um = (hole.u0 + hole.u1) / 2, ul = hole.u1 - hole.u0;
+    for (const [du, dv, lu, lv] of [[0, -hole.v - 0.1, ul + 0.4, 0.2], [0, hole.v + 0.1, ul + 0.4, 0.2], [-ul / 2 - 0.1, 0, 0.2, 2 * hole.v], [ul / 2 + 0.1, 0, 0.2, 2 * hole.v]]) {
+      const [px, pz] = rail.toXZ(um + du, dv);
+      const wall = new THREE.Mesh(new THREE.BoxGeometry(lu, PIT, lv), pitMat);
+      wall.position.set(px, -PIT / 2, pz);
+      wall.rotation.y = ry;
+      pitWalls.push(wall);
     }
-    // canopy over the boarding area + sign
-    const doorU = r0 - CABIN.along / 2;
-    const cU = doorU - 2.8;
+    const [fx, fz] = rail.toXZ(um, 0);
+    const pitFloor = new THREE.Mesh(new THREE.BoxGeometry(ul + 0.4, 0.2, 2 * hole.v + 0.4), pitMat);
+    pitFloor.position.set(fx, -PIT - 0.1, fz);
+    pitFloor.rotation.y = ry;
+    for (const m of [...pitWalls, pitFloor]) { m.receiveShadow = true; group.add(m); }
+    // guard rails on three sides + returns beside the doorway (the lift gates the rest)
+    buildShaftRailing({ rail, y: STATION_Y, collision, material: steel, group });
+    // canopy over the waiting area — kept clear of the cabin, which rises
+    // inwards over the landing as it climbs the curved leg
+    const doorU = sill;
+    const cU = doorU - 5.4;
     const [ccx, ccz] = rail.toXZ(cU, 0);
-    const roof = new THREE.Mesh(new THREE.BoxGeometry(6.5, 0.2, 5.5), steel);
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(4.6, 0.2, 5.5), steel);
     roof.position.set(ccx, 3.9, ccz);
-    roof.rotation.y = -Math.atan2(rail.dirOut.z, rail.dirOut.x);
+    roof.rotation.y = ry;
     roof.castShadow = true;
-    const roofGlass = new THREE.Mesh(new THREE.BoxGeometry(6.2, 0.05, 5.2), glass);
-    roofGlass.position.set(ccx, 4.05, ccz); roofGlass.rotation.y = roof.rotation.y;
+    const roofGlass = new THREE.Mesh(new THREE.BoxGeometry(4.3, 0.05, 5.2), glass);
+    roofGlass.position.set(ccx, 4.05, ccz); roofGlass.rotation.y = ry;
     group.add(roof, roofGlass);
-    for (const [du, dv] of [[-3, -2.5], [-3, 2.5], [2.9, -2.5], [2.9, 2.5]]) {
+    for (const [du, dv] of [[-2.1, -2.5], [-2.1, 2.5], [2.0, -2.5], [2.0, 2.5]]) {
       const [px, pz] = rail.toXZ(cU + du, dv);
       const post = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.11, 3.9, 8), steel);
       post.position.set(px, 1.95, pz);
@@ -118,11 +119,11 @@ export function buildBase({ group, collision, rails }) {
     }
     const [title, sub] = labels[name] || ['ASCENSEUR', '观光电梯'];
     const sign = new THREE.Mesh(new THREE.PlaneGeometry(3.6, 0.9), new THREE.MeshStandardMaterial({ map: signTexture(title, sub), roughness: 0.6, emissive: 0xffffff, emissiveMap: signTexture(title, sub), emissiveIntensity: 0.25 }));
-    const [sxp, szp] = rail.toXZ(cU - 2.95, 0);
+    const [sxp, szp] = rail.toXZ(cU - 2.35, 0);
     sign.position.set(sxp, 3.35, szp);
     sign.rotation.y = Math.atan2(-rail.dirOut.x, -rail.dirOut.z);
     group.add(sign);
-    stations[name] = { door: rail.toXZ(doorU - 1.2, 0), sign: [sxp, szp] };
+    stations[name] = { door: rail.toXZ(doorU - 1.2, 0), sign: [sxp, szp], pit: pc };
   }
   return { stations };
 }

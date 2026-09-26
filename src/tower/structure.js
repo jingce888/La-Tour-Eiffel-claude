@@ -147,9 +147,12 @@ export function buildStructure(sets, opts = {}) {
         braces.add(facePt(f, -H(ym), ym), facePt(f, H(ym), ym), bw * 0.7, bw * 0.55, f.n, 0.97);
       }
     }
-    // plan bracing ("spokes") every other panel: corner → lift-shaft frame
-    if (k % 2 === 0) {
-      const y = y0, cf = 2.9;
+    // plan bracing ("spokes") every other panel: corner → lift-shaft frame.
+    // Not at the 2nd floor itself (the deck girders brace it, and the spokes
+    // would cross the inclined lifts' arrival); the frame clears both summit
+    // cabins and their guide rails.
+    if (k % 2 === 0 && k > 0) {
+      const y = y0, cf = 3.3;
       const frame = [[cf, y, cf], [cf, y, -cf], [-cf, y, -cf], [-cf, y, cf]];
       braces.poly([...frame, frame[0]], bw * 0.8, bw * 0.6, [0, 1, 0], 0.92);
       for (const [sx, sz] of LEGS) {

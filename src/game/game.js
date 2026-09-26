@@ -31,6 +31,8 @@ export class Game {
       const surface = tag === 'ground' || tag === 'ramp' || tag === 'station' ? 'ground' : (tag && (tag.delta || tag.cabins)) ? 'lift' : 'deck';
       this.audio.step(surface, speed);
     };
+    this.rescues = 0;
+    this.player.onRescue = () => { this.rescues++; console.warn('[player] fall rescue'); };
     this.clock = new THREE.Clock();
     this.t = 0;
     this.running = false;

@@ -99,7 +99,7 @@ async function boot() {
   await nextFrame();
 
   // ---------------------------------------------------------------- Paris
-  const world = await buildWorld({ scene, renderer, collision, atmo, progress: (f, t) => progress(0.4 + f * 0.5, t), nextFrame });
+  const world = await buildWorld({ scene, renderer, collision, atmo, progress: (f, t) => progress(0.4 + f * 0.5, t), nextFrame, groundHoles: Object.values(base.stations).map((st) => st.pit) });
 
   // ---------------------------------------------------------------- game
   const input = new Input(renderer.domElement);
@@ -130,6 +130,12 @@ async function boot() {
       game.player.teleport(l.pos.x + l.rail.dirOut.x * 0.8, l.pos.y, l.pos.z + l.rail.dirOut.z * 0.8, Math.atan2(l.rail.dirOut.x, l.rail.dirOut.z), 0.1);
     }
     game.player.groundTag = null;
+  }
+  // test hook: park a lift at one of its stops with the doors open (?park=E:1)
+  if (Q.get('park')) {
+    const [name, i] = Q.get('park').split(':');
+    const l = lifts.find((x) => x.name === name);
+    if (l && l.stops[+i]) { l.state.y = l.stops[+i].y; l.stopIndex = +i; l.mode = 'open'; l.door = 1; l.target = null; l.sync(); }
   }
 
   progress(0.94, '编译着色器…');
